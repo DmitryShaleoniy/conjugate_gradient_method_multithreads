@@ -56,8 +56,7 @@ double skalar_mono (double *var1, double* var2) { //в одном потоке
   return res;
 }
 
-int main()
-{
+void skalar_test (){
   double var1[demension];
   double var2[demension];
   double res_mono;
@@ -77,4 +76,87 @@ int main()
   auto duration_mono = std::chrono::duration_cast<std::chrono::microseconds>(end_mono - start_mono);
   printf("result mono = %f\n", res_mono);
   std::cout << "time duration mono = " << duration_mono.count() << std::endl;
+}
+
+double* matrix_vector_multiplication_mono (double** matr, double* vec, int dim){
+  double* result = new double[dim];
+  for (int i = 0; i < dim; i++)
+    *(result + i) = 0;
+  auto start = std::chrono::high_resolution_clock::now();
+  for(int i = 0; i < dim; i++){
+    for(int j = 0; j < dim; j++){
+      *(result + i) += *(*(matr + i) + j)*(*(vec + j));
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  std::cout << "time duration mono = " << duration.count() << std::endl;
+  return result;
+}
+
+double* matrix_vector_multiplication_mult (double** matr, double* vec, int dim){
+  double* result = new double[dim];
+  for (int i = 0; i < dim; i++)
+    *(result + i) = 0;
+  auto start = std::chrono::high_resolution_clock::now();
+  #pragma omp parallel for
+  for(int i = 0; i < dim; i++){
+    for(int j = 0; j < dim; j++){
+      *(result + i) += *(*(matr + i) + j)*(*(vec + j));
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  std::cout << "time duration mult = " << duration.count() << std::endl;
+  return result;
+}//из тестов - многопоточное умножение матрицы на вектор быстрее однопоточного примерно в 3-5 раз
+
+void matrix_vector_multiplication_test(){
+  double **matrix = new double*[demension];
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    *(matrix+i) = new double[demension];
+  }
+
+  double vec[demension];
+  for (int i = 0; i < demension; i++){
+    *(vec+i) = i%10;
+    for (int j = 0; j < demension; j++){
+      *(*(matrix + i) + j) = (j + i*4 + 1)%100;
+    }
+  }
+
+  double* result = new double[demension];
+  double* result_mult = new double[demension];
+  result = matrix_vector_multiplication_mono(matrix, vec, demension);
+  
+  double sum = 0;
+  #pragma omp parallel for reduction(+:sum)
+  for (size_t i = 0; i < demension; i++)
+  {
+    sum += *(result + i);
+  }
+  std::cout<< "control sum for mono = " <<sum << std::endl;
+
+  result_mult = matrix_vector_multiplication_mult(matrix, vec, demension);
+  sum = 0;
+  #pragma omp parallel for reduction(+:sum)
+  for (size_t i = 0; i < demension; i++)
+  {
+    sum += *(result_mult + i);
+  }
+  std::cout<< "control sum for mult = " <<sum << std::endl;
+
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    delete[] matrix[i];
+  }
+  delete[] matrix;
+  delete[] result;
+  delete[] result_mult;
+}
+
+int main()
+{
+  matrix_vector_multiplication_test();
 }
