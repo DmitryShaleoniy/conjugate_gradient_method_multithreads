@@ -3,7 +3,9 @@
 #include <chrono>
 #include <iostream>
 #include <atomic>
-#define demension 10000
+
+#define demension 1000
+#define epsilon pow(10, -4)
 
 //функция вычисления скалярного произведения 
 double skalar (double *var1, double* var2) {//8 потоков
@@ -61,7 +63,7 @@ void skalar_test (){
   double var2[demension];
   double res_mono;
   double res_mult;
-  time_t start_time, end_time, start_time_mono, end_time_mono;
+  //time_t start_time, end_time, start_time_mono, end_time_mono;
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
     *(var1 + i) = i;
@@ -156,7 +158,175 @@ void matrix_vector_multiplication_test(){
   delete[] result_mult;
 }
 
-int main()
-{
-  matrix_vector_multiplication_test();
+void make_rand_sym_positive_matr (double** res){
+  // VAV^T - V - матрица собственных векторов, А - диагональная матрица собственных значений
+  srand(time(0));
+  double** V = new double*[demension];
+  double** A = new double*[demension];
+  double** tmp = new double*[demension];
+  #pragma omp parallel for
+  for (int i = 0; i < demension; i++){
+    *(tmp + i) = new double[demension];
+    *(V + i) = new double[demension];
+    *(A + i) = new double[demension];
+  }
+
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    for(int j = 0; j < demension; j++){
+      if(rand()%10==0){
+        *(*(V + i) + j) = rand()%100;
+      }
+      else {
+        *(*(V + i) + j) = 0;
+      }
+      *(*(A + i) + j) = 0;
+    }
+    if(rand()%1000==0){
+      *(*(A + i) + i) = rand()%10;
+    }
+  }
+
+  
+  for (int i = 0; i < demension; i++){
+    
+  }
+  
+  //matrix_matrix_mult(V,A,tmp);
+  //matrix_matrix_mult(tmp,V,res); //обусловимся, что V задали симметрической
+
+  #pragma omp parallel for
+  for (int i = 0; i < demension; i++){
+    delete[] *(tmp + i);
+    delete[] *(V + i);
+    delete[] *(A + i);
+  }
+  delete[] tmp;
+  delete[] V;
+  delete[] A;
+}
+
+void matrix_matrix_mult(double** m1, double** m2, double** result){
+  auto start = std::chrono::high_resolution_clock::now();
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    for(int j = 0; j < demension; j++){
+      result[i][j] = 0;
+      for(int k = 0; k < demension; k++){
+        result[i][j] += m1[i][k]*m2[k][j];
+      }
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  std::cout << "time duration mult = " << duration.count() << std::endl;
+}
+
+void matrix_matrix_mono(double** m1, double** m2, double** result){
+  auto start = std::chrono::high_resolution_clock::now();
+  for(int i = 0; i < demension; i++){
+    for(int j = 0; j < demension; j++){
+      result[i][j] = 0;
+      for(int k = 0; k < demension; k++){
+        result[i][j] += m1[i][k]*m2[k][j];
+      }
+    }
+  }
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  std::cout << "time duration mono = " << duration.count() << std::endl;
+}
+
+void matr_mult_test(){
+  srand(time(0));
+  double **matrix1 = new double*[demension];
+  double **matrix2 = new double*[demension];
+  double **result = new double*[demension];
+  double **result_mult = new double*[demension];
+
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    *(matrix1+i) = new double[demension];
+    *(matrix2+i) = new double[demension];
+    *(result+i) = new double[demension];
+    *(result_mult+i) = new double[demension];
+  }
+
+  for (size_t i = 0; i < demension; i++){
+    for (size_t j = 0; j < demension; j++){
+      *(*(matrix1 + i) + j) = rand()%100;
+      *(*(matrix2 + i) + j) = rand()%100;
+    }
+  }
+  
+
+  matrix_matrix_mono(matrix1, matrix2, result);
+  double sum = 0;
+  #pragma omp parallel for reduction(+:sum)
+  for (int i = 0; i < demension; i++){
+    for (int j = 0; j < demension; j++){
+      sum += *(*(result + i) + j);
+    }
+  }
+  std::cout<< "control sum for mono = " <<sum << std::endl;
+
+  matrix_matrix_mult(matrix1, matrix2, result_mult);
+
+  sum = 0;
+  #pragma omp parallel for reduction(+:sum)
+  for (int i = 0; i < demension; i++){
+    for (int j = 0; j < demension; j++){
+      sum += *(*(result + i) + j);
+    }
+  }
+  std::cout<< "control sum for mult = " <<sum << std::endl;
+
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    delete[] matrix1[i];
+    delete matrix2[i];
+  }
+  delete[] matrix1;
+  delete[] matrix2;
+  delete[] result;
+  delete[] result_mult;
+}
+
+int main() {
+  srand(time(0));
+  // //реализуем алгоритм
+  // //задать матрицу А - разряженная и симметрическая размерности demension
+  // //double preA[demension][demension];
+  // double** preA = new double*[demension];
+  // #pragma omp parallel for
+  // for (int i= 0; i < demension; i++) {
+  //   *(preA+i) = new double[demension];
+  // }
+  // int counter = 0;
+  // auto start = std::chrono::high_resolution_clock::now();
+  // //#pragma omp parallel for
+  // for (size_t i = 0; i < demension; i++){
+  //   for (size_t j = i; j < demension; j++) {
+  //     if(rand()%10==7){
+  //       preA[i][j] = rand()%100;
+  //     }
+  //     else {
+  //       preA[i][j] = 0;
+  //     }
+  //     preA[j][i] = preA[i][j];
+  //   }
+  // }
+  // std::cout<<counter<<std::endl;
+  // auto end = std::chrono::high_resolution_clock::now();
+  // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+  // std::cout << "time duration = " << duration.count() << std::endl;
+
+
+  // #pragma omp parallel for
+  // for (int i = 0; i < demension; i++){
+  //   delete[] *(preA + i);
+  // }
+  // delete[] preA;
+  // return 0;
+  matr_mult_test();
 }
