@@ -5,7 +5,7 @@
 #include <atomic>
 #include <vector>
 
-#define demension 1000
+#define demension 5
 #define epsilon pow(10, -4)
 
 //функция вычисления скалярного произведения 
@@ -311,6 +311,7 @@ void make_rand_sym_positive_matr(double** result) {//более простая �
       else {
         *(*(A + i) + j) = 0;
       }
+      *(*(A + j) + i) = *(*(A + i) + j);
     }
   }
 
@@ -334,6 +335,17 @@ void make_rand_sym_positive_matr(double** result) {//более простая �
   delete[] A;
 }
 
+void print_matr(double** A) {
+  if(demension <= 10) {
+    for(int i = 0; i < demension; i++){
+      for(int j = 0; j < demension; j++){
+       std::cout << A[i][j] << "\t";
+      }
+     std::cout << std::endl;
+    }
+  }
+}
+
 //теперь сделаем эффективное хранение разреженных матриц
 void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::vector<double> &vals){
   double** A = new double*[demension];
@@ -351,26 +363,30 @@ void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::v
       else {
         *(*(A + i) + j) = 0;
       }
+      *(*(A + j) + i) = *(*(A + i) + j);
     }
   }
 
-  double k = rand()%100;
+  double z = rand()%100;
   double tmp;
+
+  print_matr(A);
 
   for(int i = 0; i < demension; i++){
     for(int j = 0; j < demension; j++){
-      for(int k = 0; k < demension; k++){
-        if((tmp = A[i][k]*A[j][k]) != 0){ //A*A^T
-         vals.push_back(tmp + (i == j)*k); //вместе с диагональным смещением
-         rows.push_back(i);
-         cols.push_back(j);
-        }
-        else if (i == j){
-         vals.push_back(k);
-         rows.push_back(i);
-         cols.push_back(j);
-        }
-      
+      tmp = 0;
+      for(int k = 0; k < demension; k++){//A*A^T
+        tmp += A[i][k]*A[k][j];
+      }
+      if (tmp != 0){
+        vals.push_back(tmp + ((double)(i == j))*z); //вместе с диагональным смещением
+        rows.push_back(i);
+        cols.push_back(j);
+      }
+      else if(i == j){
+        vals.push_back(z); //вместе с диагональным смещением
+        rows.push_back(i);
+        cols.push_back(j);
       }
     }
   }
@@ -440,17 +456,11 @@ void test_add_matr(){
   delete[] preA;
 } // время примерно одинаковое
 
-void print_matr(double** A) {
-  for(int i = 0; i < demension; i++){
-    for(int j = 0; j < demension; j++){
-      std::cout << A[i][j] << "\t";
-    }
-    std::cout << std::endl;
-  }
-}
+
 
 
 int main() {
+  srand(time(0));
   double** preA = new double*[demension];
   double** res = new double*[demension];
   #pragma omp parallel for
@@ -478,6 +488,23 @@ int main() {
   auto end_m = std::chrono::high_resolution_clock::now();
   auto duration_m = std::chrono::duration_cast<std::chrono::microseconds>(end_m - start_m);
   std::cout << "time duration mono = " << duration_m.count() << std::endl;
+
+  int k = 0;
+
+  if(demension <= 10){
+  for (size_t i = 0; i < demension; i++){
+    for (size_t j = 0; j < demension; j++){
+        if(i == rows[k] && j == cols[k] && k < rows.size()){
+          std::cout<<vals[k]<<"\t";
+          k++;
+        }
+        else 
+          std::cout<< "0" <<"\t";
+    }
+    std::cout<<std::endl;
+  }
+}
+  
 
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
