@@ -4,9 +4,30 @@
 #include <iostream>
 #include <atomic>
 #include <vector>
+#include <random>
+#include <fstream>
 
-#define demension 5
+#define demension 1000
 #define epsilon pow(10, -4)
+
+int intRand(const int & min, const int & max) {
+  static thread_local std::mt19937 generator;
+  std::uniform_int_distribution<int> distribution(min,max);
+  return distribution(generator);
+} //этот генератор безопасен для многопоточного использования, т.к. rand() - это общий ресурс на всех, 
+//а здесь мы создаём отдельный генератор для каждого потока
+
+
+void print_matr(double** A) {
+  if(demension <= 10) {
+    for(int i = 0; i < demension; i++){
+      for(int j = 0; j < demension; j++){
+       std::cout << A[i][j] << "\t";
+      }
+     std::cout << std::endl;
+    }
+  }
+}
 
 //функция вычисления скалярного произведения 
 double skalar (double *var1, double* var2) {//8 потоков
@@ -51,9 +72,9 @@ double skalar_try (double *var1, double* var2) {//8 потоков, исполь
 double skalar_mono (double *var1, double* var2) { //в одном потоке
   double res = 0;
   for(int i = 0; i < demension; i++) {
-    if(i == 0 || i == demension/2 || i == demension*3/4) {
-      printf("thread num = %d\n", omp_get_thread_num());
-    }
+    // if(i == 0 || i == demension/2 || i == demension*3/4) {
+    //   printf("thread num = %d\n", omp_get_thread_num());
+    // }
     res += (var1[i] * var2[i]);
   }
   return res;
@@ -97,14 +118,14 @@ double* matrix_vector_multiplication_mono (double** matr, double* vec, int dim){
   return result;
 }
 
-double* matrix_vector_multiplication_mult (double** matr, double* vec, int dim){
-  double* result = new double[dim];
-  for (int i = 0; i < dim; i++)
+double* matrix_vector_multiplication_mult (double** matr, double* vec){
+  double* result = new double[demension];
+  for (int i = 0; i < demension; i++)
     *(result + i) = 0;
   auto start = std::chrono::high_resolution_clock::now();
   #pragma omp parallel for
-  for(int i = 0; i < dim; i++){
-    for(int j = 0; j < dim; j++){
+  for(int i = 0; i < demension; i++){
+    for(int j = 0; j < demension; j++){
       *(result + i) += *(*(matr + i) + j)*(*(vec + j));
     }
   }
@@ -141,7 +162,7 @@ void matrix_vector_multiplication_test(){
   }
   std::cout<< "control sum for mono = " <<sum << std::endl;
 
-  result_mult = matrix_vector_multiplication_mult(matrix, vec, demension);
+  result_mult = matrix_vector_multiplication_mult(matrix, vec);
   sum = 0;
   #pragma omp parallel for reduction(+:sum)
   for (size_t i = 0; i < demension; i++)
@@ -161,7 +182,7 @@ void matrix_vector_multiplication_test(){
 
 void matrix_matrix_mult(double** m1, double** m2, double** result){
   auto start = std::chrono::high_resolution_clock::now();
-  #pragma omp parallel for
+  #pragma omp parallel for collapse(2) schedule(dynamic, 1000)
   for(int i = 0; i < demension; i++){
     for(int j = 0; j < demension; j++){
       result[i][j] = 0;
@@ -244,7 +265,7 @@ void matr_mult_test(){
   delete[] result_mult;
 }
 
-void make_rand_sym_semi_positive_matr (double** res){
+void make_rand_sym_semi_positive_matr (double** res){//альтернативная версия
   // VAV^T - V - матрица собственных векторов, А - диагональная матрица собственных значений
   srand(time(0));
   double** V = new double*[demension];
@@ -257,11 +278,18 @@ void make_rand_sym_semi_positive_matr (double** res){
     *(A + i) = new double[demension];
   }
 
-  #pragma omp parallel for
+  #pragma omp parallel
+  {
+    thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::uniform_int_distribution<int> dist99(0, 99); //создаём 1 раз на поток
+    thread_local std::uniform_int_distribution<int> dist9(0, 9);
+    thread_local std::uniform_int_distribution<int> dist999(0, 999);
+
+  #pragma omp for
   for(int i = 0; i < demension; i++){
     for(int j = i; j < demension; j++){
-      if(rand()%10==0){
-        *(*(V + i) + j) = rand()%100;
+      if(gen()%10==0){
+        *(*(V + i) + j) = gen()%100;
       }
       else {
         *(*(V + i) + j) = 0;
@@ -269,10 +297,11 @@ void make_rand_sym_semi_positive_matr (double** res){
       *(*(A + i) + j) = 0;
       *(*(V + j) + i) = *(*(V + i) + j);
     }
-    if(rand()%1000==0){
-      *(*(A + i) + i) = rand()%10;
+    if(dist999(gen)==0){
+      *(*(A + i) + i) = (double)dist9(gen);
     }
   }
+}
   
   // for (int i = 0; i < demension; i++){
   //   for (int j = 0; j < demension; j++){
@@ -295,70 +324,146 @@ void make_rand_sym_semi_positive_matr (double** res){
   delete[] A;
 }
 
-void make_rand_sym_positive_matr(double** result) {//более простая версия
-  double** A = new double*[demension];
-  #pragma omp parallel for
-  for (int i = 0; i < demension; i++){
-    *(A + i) = new double[demension];
-  }
-
-  #pragma omp parallel for
-  for(int i = 0; i < demension; i++){
-    for(int j = i; j < demension; j++){
-      if(rand()%10==0){
-        *(*(A + i) + j) = rand()%100;
-      }
-      else {
-        *(*(A + i) + j) = 0;
-      }
-      *(*(A + j) + i) = *(*(A + i) + j);
+void make_rand_sym_positive_matr(double** result) {//главная версия
+  omp_set_num_threads(12);
+    double** A = new double*[demension];
+    #pragma omp parallel for
+    for (int i = 0; i < demension; i++){
+      *(A + i) = new double[demension];
     }
-  }
-
-  double k = rand()%100;
-
-  #pragma omp parallel for
-  for(int i = 0; i < demension; i++){
-    for(int j = 0; j < demension; j++){
-      result[i][j] = 0;
-      for(int k = 0; k < demension; k++){
-        result[i][j] += A[i][k]*A[j][k]; //A*A^T
-      }
-    }
-    result[i][i] += k; //диагональное смещение
-  }
-
-  #pragma omp parallel for
-  for (int i = 0; i < demension; i++){
-    delete[] *(A + i);
-  }
-  delete[] A;
-}
-
-void print_matr(double** A) {
-  if(demension <= 10) {
+  std::cout << "A crated" << std::endl;
+    #pragma omp parallel 
+    {
+      thread_local std::mt19937 gen(std::random_device{}());
+    #pragma omp for
     for(int i = 0; i < demension; i++){
       for(int j = 0; j < demension; j++){
-       std::cout << A[i][j] << "\t";
+        if(gen()%1000==0){//!
+          *(*(A + i) + j) = ((unsigned int)gen())%100;
+        }
+        else {
+          *(*(A + i) + j) = 0;
+        }
+        //*(*(A + j) + i) = *(*(A + i) + j);
       }
-     std::cout << std::endl;
     }
   }
+  
+  std::cout << "A filled" << std::endl;
+  
+  double sum = 0;
+  
+  print_matr(A);
+
+    #pragma omp parallel for private(sum)//schedule(static, 834) collapse(2)//коллапс делает из двух циклов один большой с i и j одновремнно. Почему размер чанка 100? Лучше брать chunk_size = N / (8 * число_потоков)
+    for(int i = 0; i < demension; i++){//без коллапса у нас паралеллится только внешний цикл по i(j внутри каждого потока выполняется последовательно), а с ним по i и по j
+      for(int j = 0; j < demension; j++){
+        sum = 0;
+        for(int k = 0; k < demension; k++){
+          sum += A[i][k]*A[j][k]; //A*A^T
+        }
+        result[i][j] = sum;
+      }
+    }
+
+    double k = rand()%100;
+  
+    #pragma omp parallel for
+    for (int i = 0; i < demension; i++){
+      result[i][i] += k; //диагональное смещение
+    }
+  
+    print_matr(result);
+
+    std::ofstream out[12];
+    #pragma omp parallel for
+    for (int i = 0; i < 12; i++){
+        (*(out + i)).open("matrix_" + std::to_string(omp_get_thread_num()));
+    }
+
+    #pragma omp parallel for
+    for(int i = 0; i < demension; i++){
+        for(int j = 0; j < demension; j++){
+            if(result[i][j] != 0){
+                (*(out + omp_get_thread_num())) << i << " " << j << " " << result[i][j] << "\n"; //хранение в файле (x1, y1, val1, x2, y2, val2...)
+            }
+        }
+    }
+
+    for (int i = 0; i < 12; i++){
+        (*(out + i)).seekp(0, std::ios::end);
+        (*(out + i)) << EOF;
+        (*(out + i)).close();
+    }
+
+    //теперь попробуем вывести...
+    std::ifstream in[12];
+    #pragma omp parallel for
+    for (int i = 0; i < 12; i++){
+        (*(in + i)).open("matrix_" + std::to_string(omp_get_thread_num()));
+    }
+
+    int file_num = 0;
+    int x;
+    int y;
+    int peek;
+    double val;
+    char tmp;
+
+    *(in + file_num) >> x >> y >> val;
+
+    for(int i = 0; i < demension; i++){
+        for(int j = 0; j < demension; j++){
+            if(file_num < 12 && i == x && j == y) {
+                std::cout << val << "\t";
+                //*(in + file_num) >> tmp;
+                // if((*(in + file_num)).eof()) {
+                //     (*(in + file_num)).close();
+                //     file_num++;
+                // }
+                if (!(*(in + file_num) >> x >> y >> val)){
+                    (*(in + file_num)).close();
+                    file_num++;
+                    if(file_num < 12){
+                        (*(in + file_num)) >> x >> y >> val;
+                    }
+                }
+            }
+            else{
+                std::cout<< 0 << "\t";
+            }
+        }
+        std::cout<<std::endl;
+    }
+
+    //(*(in + file_num)).close();
+
+    #pragma omp parallel for
+    for (int i = 0; i < demension; i++){
+      delete[] *(A + i);
+    }
+    delete[] A;
 }
 
+
 //теперь сделаем эффективное хранение разреженных матриц
-void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::vector<double> &vals){
+void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::vector<double> &vals){ //старая версия, без параллелизма
   double** A = new double*[demension];
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
     *(A + i) = new double[demension];
   }
 
-  #pragma omp parallel for
+  #pragma omp parallel 
+  {
+    thread_local std::mt19937 gen(std::random_device{}());
+    //thread_local std::uniform_int_distribution<int> dist99(0, 99); //создаём 1 раз на поток
+    //thread_local std::uniform_int_distribution<int> dist9(0, 9);
+  #pragma omp for
   for(int i = 0; i < demension; i++){
     for(int j = i; j < demension; j++){
-      if(rand()%10==0){
-        *(*(A + i) + j) = rand()%100;
+      if(gen()%10==0){
+        *(*(A + i) + j) = gen()%100;
       }
       else {
         *(*(A + i) + j) = 0;
@@ -366,8 +471,9 @@ void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::v
       *(*(A + j) + i) = *(*(A + i) + j);
     }
   }
+}
 
-  double z = rand()%100;
+  double z = intRand(0,99);
   double tmp;
 
   print_matr(A);
@@ -403,7 +509,7 @@ void make_optimized(std::vector<double> &rows, std::vector<double> &cols, std::v
 }//заполнение в 5 раз медленне чем многопоточное заполнение, но полной матрицы
 
 double** add_matr_mult (double** m1, double** m2, double** res ,double k1 = 1.0, double k2 = 1.0){ //классическое представление матриц
-  #pragma omp parallel for
+  #pragma omp parallel for collapse(2)
   for (int i = 0; i < demension; i++){
     for (int j = 0; j < demension; j++){
       res[i][j] = 0;
@@ -414,7 +520,7 @@ double** add_matr_mult (double** m1, double** m2, double** res ,double k1 = 1.0,
 }
 
 double** add_matr_mono (double** m1, double** m2, double** res ,double k1 = 1.0, double k2 = 1.0){ //классическое представление матриц
-  #pragma omp parallel for
+  #pragma omp parallel
   for (int i = 0; i < demension; i++){
     for (int j = 0; j < demension; j++){
       res[i][j] = 0;
@@ -456,11 +562,77 @@ void test_add_matr(){
   delete[] preA;
 } // время примерно одинаковое
 
+double norma (double* vector) {
+  double* tmp = new double[omp_get_num_threads()];
+  for(int i = 0; i < omp_get_num_threads(); i++){
+      tmp[i] = 0;
+  }
+  //#pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+      tmp[omp_get_thread_num()] += vector[i]*vector[i];
+  }
+  double sum = 0;
+  for(int i = 0; i < 12; i++){
+      sum += tmp[i];
+  }
 
+  delete[] tmp;
+
+  return sqrt(sum);
+}
+
+double* matrix_vector_multiplication_mult_razr (double* vec){//версия для разреженной матрицы при хранении в файлах
+  double* result = new double[demension];
+  for (int i = 0; i < demension; i++)
+    *(result + i) = 0;
+
+  std::ifstream in[12];
+  #pragma omp parallel for
+  for (int i = 0; i < 12; i++){
+      (*(in + i)).open("matrix_" + std::to_string(omp_get_thread_num()));
+  }
+
+  #pragma omp parallel// private(sum, x, x_prev, y, val)
+  {
+  if(demension < 12){
+      omp_set_num_threads(demension);
+  }
+  int x; //в результирующем векторе это номер элемента (номер строки)
+  int x_prev = 0; // для проверки на смену строки
+  int y; //в векторе на который умножаем матрицу это номер элемента(строки)
+  double val;
+  int count = 0;
+  int sum = 0;
+  #pragma omp for
+  for(int i = 0; i < omp_get_num_threads(); i++ ){//отдельный поток - отдельный файл
+      x_prev = i*(demension/omp_get_num_threads());//небольшая оптимизация - чтобы на первой итерации while потоки не мешали друг другу
+      while((*(in + omp_get_thread_num()) >> x >> y >> val)){
+          if (x_prev != x && count != 0){
+              *(result + x_prev) += sum;
+              sum = 0;
+          }
+          sum += val*vec[y];
+          x_prev = x;
+          count++;
+      }
+      *(result + x_prev) = sum;
+  }
+}
+
+  // for (int i = 0; i < demension; i++){
+  //     std::cout << result[i] << std::endl;
+  // }
+
+  for (int i = 0; i < 12; i++){
+      (*(in + i)).close();
+  }
+
+  return result;
+}
 
 
 int main() {
-  srand(time(0));
+   srand(time(0));
   double** preA = new double*[demension];
   double** res = new double*[demension];
   #pragma omp parallel for
@@ -470,7 +642,7 @@ int main() {
   }
 
   auto start = std::chrono::high_resolution_clock::now();
-  make_rand_sym_positive_matr(preA);
+  //make_rand_sym_positive_matr(preA);
   auto end = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
   std::cout << "time duration mult = " << duration.count() << std::endl;
@@ -484,7 +656,7 @@ int main() {
   vals.reserve(demension * demension);
 
   auto start_m = std::chrono::high_resolution_clock::now();
-  make_optimized(rows, cols, vals);
+  //make_optimized(rows, cols, vals);
   auto end_m = std::chrono::high_resolution_clock::now();
   auto duration_m = std::chrono::duration_cast<std::chrono::microseconds>(end_m - start_m);
   std::cout << "time duration mono = " << duration_m.count() << std::endl;
@@ -504,13 +676,71 @@ int main() {
     std::cout<<std::endl;
   }
 }
+
+std::cout << "=== starting method ===" << std::endl;
+
+  // //предварительный шаг
+  //формируем свободный вектор b:
+  double* b = new double[demension];
+
+  auto start_b = std::chrono::high_resolution_clock::now();
+  #pragma omp parallel
+  {
+    thread_local std::mt19937 gen(std::random_device{}());
+    thread_local std::uniform_int_distribution<int> dist99(0, 99);
+    #pragma omp for schedule(static, 834)
+  for (int i = 0; i < demension; i++){
+    *(b + i) = gen() % 100; //получается в 2 раза быстрее чем просто rand(), но все равно мало
+  }
+}
+  auto end_b = std::chrono::high_resolution_clock::now();
+  auto duration_b = std::chrono::duration_cast<std::chrono::microseconds>(end_b - start_b);
+  std::cout << "time b mult  = " << duration_b.count() << std::endl; //если использовать нашу intRand() вместо rand()%, то многопоточный быстрее :)
+
+  // auto start_bm = std::chrono::high_resolution_clock::now();
+  // for (int i = 0; i < demension; i++){
+  //   *(b + i) = rand()%100; //для однопоточного rand() будет быстрее 
+  // }
+  // auto end_bm = std::chrono::high_resolution_clock::now();
+  // auto duration_bm = std::chrono::duration_cast<std::chrono::microseconds>(end_bm - start_bm);
+  // std::cout << "time b mono  = " << duration_bm.count() << std::endl;
+
   
+//вектоор невязки r и вектор направления p
+
+  //возьмем вектор (X_0)^T = (0 0 0 ... 0) => r = b - A*X_0 = b
+  double* r = new double[demension];
+  double* p = new double[demension];
+  double* tmp = new double[demension];
+
+  #pragma omp parallel for
+  for(int i = 0; i < demension; i++){
+    *(r + i) = *(b + i);
+    *(p + i) = *(b + i);
+    *(tmp + i) = *(b + i);
+  }
+
+  std::cout<<"pre-iteration finished"<<std::endl;
+
+  int count = 0;
+  int a;//alpha
+  while((norma(r)/norma(b)) >= epsilon && count < demension){ //здесь выполняется метод
+    tmp = matrix_vector_multiplication_mult_razr(p);//надо сделать версию этой функции для разреженного хранения - сделал
+    a = (skalar_mono(r,r))/(skalar_mono(tmp, p));
+    count++;
+  }
+
+
 
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
     delete[] *(preA + i);
     delete[] *(res + i);
   }
+  delete[] tmp;
+  delete[] r;
+  delete[] p;
+  delete[] b;
   delete[] res;
   delete[] preA;
 }
