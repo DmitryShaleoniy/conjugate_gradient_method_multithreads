@@ -6,7 +6,7 @@
 #include <random>
 #include <chrono>
 
-#define demension 1000
+#define demension 2000
 std::string line;
 
 void print_matr(double** A) {
@@ -224,9 +224,9 @@ void make_rand_sym_positive_matr(double** result) {//более простая �
     }
 }
 
-    for (int i = 0; i < demension; i++){
-        std::cout << result[i] << std::endl;
-    }
+    // for (int i = 0; i < demension; i++){
+    //     std::cout << result[i] << std::endl;
+    // }
 
     for (int i = 0; i < 12; i++){
         (*(in + i)).close();
@@ -266,8 +266,18 @@ int main()
     for (int i = 0; i < demension; i++){
         delete[] *(preA + i);
       }
+      auto start = std::chrono::high_resolution_clock::now();
+      result = matrix_vector_multiplication_mult_razr(vector);
+      auto end = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+      std::cout << "time duration mult_razr = " << duration.count() << std::endl;
 
-    //result = matrix_vector_multiplication_mult_razr(vector);
+
+      auto start_m = std::chrono::high_resolution_clock::now();
+      result = matrix_vector_multiplication_mult(preA, vector);
+      auto end_m = std::chrono::high_resolution_clock::now();
+      auto duration_m = std::chrono::duration_cast<std::chrono::microseconds>(end_m - start_m);
+      std::cout << "time duration mult = " << duration_m.count() << std::endl;
     delete[] preA;
     delete[] vector;
     delete[] result;

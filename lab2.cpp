@@ -7,8 +7,8 @@
 #include <random>
 #include <fstream>
 
-#define demension 1000
-#define epsilon pow(10, -4)
+#define demension 2
+#define epsilon 0.0000001
 
 int intRand(const int & min, const int & max) {
   static thread_local std::mt19937 generator;
@@ -29,21 +29,29 @@ void print_matr(double** A) {
   }
 }
 
-//функция вычисления скалярного произведения 
-double skalar (double *var1, double* var2) {//8 потоков
-  omp_set_num_threads(8);
-  double res = 0;
-  double th_tmp[8] {0};
-  auto start = std::chrono::high_resolution_clock::now();
-  #pragma omp parallel for shared(var1, var2)
-  for(int i = 0; i < demension; i++) {
-    if(i == 0 || i == demension/2 || i == demension*3/4) {
-      printf("thread num = %d\n", omp_get_thread_num());
+void print_vector(double* vec){
+  if(demension <=10) {
+    for(int i = 0; i < demension; i++){
+      std::cout<<vec[i]<<std::endl;
     }
+  }
+}
+
+//функция вычисления скалярного произведения 
+double skalar (double *var1, double* var2) {//8 потоков5
+  omp_set_num_threads(12);
+  double res = 0;
+  double th_tmp[12] {0};
+  auto start = std::chrono::high_resolution_clock::now();
+  #pragma omp parallel for schedule(static, 10)
+  for(int i = 0; i < demension; i++) {
+    // if(i == 0 || i == demension/2 || i == demension*3/4) {
+    //   printf("thread num = %d\n", omp_get_thread_num());
+    // }
     th_tmp[omp_get_thread_num()] += (*(var1 + i))*(*(var2 + i));
   }
-#pragma omp parallel for// reduction(+:res)
-for(int i = 0; i < 8; i++){
+#pragma omp parallel for reduction(+:res)
+for(int i = 0; i < 12; i++){
   res += th_tmp[i];
 }
 auto end = std::chrono::high_resolution_clock::now();
@@ -58,9 +66,9 @@ double skalar_try (double *var1, double* var2) {//8 потоков, исполь
   auto start = std::chrono::high_resolution_clock::now();
   #pragma omp parallel for shared(var1, var2) reduction(+:res)
   for(int i = 0; i < demension; i++) {
-    if(i == 0 || i == demension/2 || i == demension*3/4) {
-      printf("thread num = %d\n", omp_get_thread_num());
-    }
+    // if(i == 0 || i == demension/2 || i == demension*3/4) {
+    //   printf("thread num = %d\n", omp_get_thread_num());
+    // }
     res += (*(var1 + i))*(*(var2 + i));
   }
   auto end = std::chrono::high_resolution_clock::now();
@@ -71,12 +79,16 @@ double skalar_try (double *var1, double* var2) {//8 потоков, исполь
 
 double skalar_mono (double *var1, double* var2) { //в одном потоке
   double res = 0;
+  auto start_mono = std::chrono::high_resolution_clock::now();
   for(int i = 0; i < demension; i++) {
     // if(i == 0 || i == demension/2 || i == demension*3/4) {
     //   printf("thread num = %d\n", omp_get_thread_num());
     // }
     res += (var1[i] * var2[i]);
   }
+  auto end_mono = std::chrono::high_resolution_clock::now();
+  auto duration_mono = std::chrono::duration_cast<std::chrono::microseconds>(end_mono - start_mono);
+  //std::cout << "time duration mono = " << duration_mono.count() << std::endl;
   return res;
 }
 
@@ -93,13 +105,9 @@ void skalar_test (){
   }
   res_mult = skalar(var1, var2);
   printf("result multi = %f\n", res_mult);
-  
-  auto start_mono = std::chrono::high_resolution_clock::now();
+ 
   res_mono = skalar_mono(var1, var2);
-  auto end_mono = std::chrono::high_resolution_clock::now();
-  auto duration_mono = std::chrono::duration_cast<std::chrono::microseconds>(end_mono - start_mono);
   printf("result mono = %f\n", res_mono);
-  std::cout << "time duration mono = " << duration_mono.count() << std::endl;
 }
 
 double* matrix_vector_multiplication_mono (double** matr, double* vec, int dim){
@@ -512,19 +520,18 @@ double** add_matr_mult (double** m1, double** m2, double** res ,double k1 = 1.0,
   #pragma omp parallel for collapse(2)
   for (int i = 0; i < demension; i++){
     for (int j = 0; j < demension; j++){
-      res[i][j] = 0;
-      res[i][j] += (k1*m1[i][j] + k2*m2[i][j]);
+      //res[i][j] = 0;
+      res[i][j] = (k1*m1[i][j] + k2*m2[i][j]);
     }
   }
   return res;
 }
 
 double** add_matr_mono (double** m1, double** m2, double** res ,double k1 = 1.0, double k2 = 1.0){ //классическое представление матриц
-  #pragma omp parallel
   for (int i = 0; i < demension; i++){
     for (int j = 0; j < demension; j++){
-      res[i][j] = 0;
-      res[i][j] += (k1*m1[i][j] + k2*m2[i][j]);
+      //res[i][j] = 0;
+      res[i][j] = (k1*m1[i][j] + k2*m2[i][j]);
     }
   }
   return res;
@@ -560,14 +567,22 @@ void test_add_matr(){
   }
   delete[] res;
   delete[] preA;
-} // время примерно одинаковое
+} // многопоточная реализация в 2.5 раза быстрее (без разрежения)
+
+double* add_vec_mult (double* v1, double* v2, double* res ,double k1 = 1.0, double k2 = 1.0){ //классическое представление матриц
+  #pragma omp parallel for
+  for (int i = 0; i < demension; i++){
+      res[i]= (k1*v1[i] + k2*v2[i]);
+  }
+  return res;
+}
 
 double norma (double* vector) {
-  double* tmp = new double[omp_get_num_threads()];
+  double tmp[omp_get_num_threads()];
   for(int i = 0; i < omp_get_num_threads(); i++){
       tmp[i] = 0;
   }
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for(int i = 0; i < demension; i++){
       tmp[omp_get_thread_num()] += vector[i]*vector[i];
   }
@@ -576,13 +591,11 @@ double norma (double* vector) {
       sum += tmp[i];
   }
 
-  delete[] tmp;
-
   return sqrt(sum);
 }
 
-double* matrix_vector_multiplication_mult_razr (double* vec){//версия для разреженной матрицы при хранении в файлах
-  double* result = new double[demension];
+void matrix_vector_multiplication_mult_razr (double* vec, double* result){//версия для разреженной матрицы при хранении в файлах
+  //double* result = new double[demension];
   for (int i = 0; i < demension; i++)
     *(result + i) = 0;
 
@@ -602,7 +615,7 @@ double* matrix_vector_multiplication_mult_razr (double* vec){//версия дл
   int y; //в векторе на который умножаем матрицу это номер элемента(строки)
   double val;
   int count = 0;
-  int sum = 0;
+  double sum = 0;
   #pragma omp for
   for(int i = 0; i < omp_get_num_threads(); i++ ){//отдельный поток - отдельный файл
       x_prev = i*(demension/omp_get_num_threads());//небольшая оптимизация - чтобы на первой итерации while потоки не мешали друг другу
@@ -627,55 +640,57 @@ double* matrix_vector_multiplication_mult_razr (double* vec){//версия дл
       (*(in + i)).close();
   }
 
-  return result;
+  //return result;
 }
 
 
 int main() {
-   srand(time(0));
-  double** preA = new double*[demension];
-  double** res = new double*[demension];
-  #pragma omp parallel for
-  for (int i= 0; i < demension; i++) {
-    *(preA+i) = new double[demension];
-    *(res + i) = new double[demension];
-  }
+  //skalar_test();
 
-  auto start = std::chrono::high_resolution_clock::now();
-  //make_rand_sym_positive_matr(preA);
-  auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-  std::cout << "time duration mult = " << duration.count() << std::endl;
+//    srand(time(0));
+//   double** preA = new double*[demension];
+//   double** res = new double*[demension];
+//   #pragma omp parallel for
+//   for (int i= 0; i < demension; i++) {
+//     *(preA+i) = new double[demension];
+//     *(res + i) = new double[demension];
+//   }
 
-  std::vector<double> rows; 
-  std::vector<double> cols;
-  std::vector<double> vals;
+//   auto start = std::chrono::high_resolution_clock::now();
+//   //make_rand_sym_positive_matr(preA);
+//   auto end = std::chrono::high_resolution_clock::now();
+//   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+//   std::cout << "time duration mult = " << duration.count() << std::endl;
 
-  rows.reserve(demension * demension);
-  cols.reserve(demension * demension);
-  vals.reserve(demension * demension);
+//   std::vector<double> rows; 
+//   std::vector<double> cols;
+//   std::vector<double> vals;
 
-  auto start_m = std::chrono::high_resolution_clock::now();
-  //make_optimized(rows, cols, vals);
-  auto end_m = std::chrono::high_resolution_clock::now();
-  auto duration_m = std::chrono::duration_cast<std::chrono::microseconds>(end_m - start_m);
-  std::cout << "time duration mono = " << duration_m.count() << std::endl;
+//   rows.reserve(demension * demension);
+//   cols.reserve(demension * demension);
+//   vals.reserve(demension * demension);
 
-  int k = 0;
+//   auto start_m = std::chrono::high_resolution_clock::now();
+//   //make_optimized(rows, cols, vals);
+//   auto end_m = std::chrono::high_resolution_clock::now();
+//   auto duration_m = std::chrono::duration_cast<std::chrono::microseconds>(end_m - start_m);
+//   std::cout << "time duration mono = " << duration_m.count() << std::endl;
 
-  if(demension <= 10){
-  for (size_t i = 0; i < demension; i++){
-    for (size_t j = 0; j < demension; j++){
-        if(i == rows[k] && j == cols[k] && k < rows.size()){
-          std::cout<<vals[k]<<"\t";
-          k++;
-        }
-        else 
-          std::cout<< "0" <<"\t";
-    }
-    std::cout<<std::endl;
-  }
-}
+//   int k = 0;
+
+//   if(demension <= 10){
+//   for (size_t i = 0; i < demension; i++){
+//     for (size_t j = 0; j < demension; j++){
+//         if(i == rows[k] && j == cols[k] && k < rows.size()){
+//           std::cout<<vals[k]<<"\t";
+//           k++;
+//         }
+//         else 
+//           std::cout<< "0" <<"\t";
+//     }
+//     std::cout<<std::endl;
+//   }
+// }
 
 std::cout << "=== starting method ===" << std::endl;
 
@@ -697,6 +712,13 @@ std::cout << "=== starting method ===" << std::endl;
   auto duration_b = std::chrono::duration_cast<std::chrono::microseconds>(end_b - start_b);
   std::cout << "time b mult  = " << duration_b.count() << std::endl; //если использовать нашу intRand() вместо rand()%, то многопоточный быстрее :)
 
+  //ДЛЯ ТЕСТА!!!!!
+
+  *(b) = 1;
+  *(b + 1) = 1;
+  //*(b + 2) = 8;
+
+
   // auto start_bm = std::chrono::high_resolution_clock::now();
   // for (int i = 0; i < demension; i++){
   //   *(b + i) = rand()%100; //для однопоточного rand() будет быстрее 
@@ -712,35 +734,56 @@ std::cout << "=== starting method ===" << std::endl;
   double* r = new double[demension];
   double* p = new double[demension];
   double* tmp = new double[demension];
+  double* x = new double[demension];
+  double* r_next = new double[demension];
 
   #pragma omp parallel for
   for(int i = 0; i < demension; i++){
+    *(x + i) = 0;
     *(r + i) = *(b + i);
     *(p + i) = *(b + i);
-    *(tmp + i) = *(b + i);
   }
 
   std::cout<<"pre-iteration finished"<<std::endl;
 
   int count = 0;
-  int a;//alpha
-  while((norma(r)/norma(b)) >= epsilon && count < demension){ //здесь выполняется метод
-    tmp = matrix_vector_multiplication_mult_razr(p);//надо сделать версию этой функции для разреженного хранения - сделал
-    a = (skalar_mono(r,r))/(skalar_mono(tmp, p));
+  double alpha;//alpha
+  double betta;
+  double skalar_rr;//будем записывать в отдельную переменную, чтобы не считать одно и то же дважды за итерацию
+  double norma_b = norma(b);
+
+//    пример проверки слау Ax = b проверка: Ax-b~0 (||Ax - b|| < Epsilon)
+//    если dim>10000 - другой критерий ((||Ax - b||)/||b|| < Epsilon)
+
+  while((norma(r) >= 0.0001)){ //здесь выполняется метод
+    skalar_rr = skalar_mono(r,r);
+    matrix_vector_multiplication_mult_razr(p, tmp);//это A*p_i
+    alpha = (skalar_rr)/(skalar_mono(tmp, p)); //посчитали alpha_i
+    add_vec_mult(x, p, x, 1, alpha); //посчитали x_(i+1)
+    add_vec_mult(r, tmp, r_next, 1, (-1)*(alpha));//посчитали следующий r_(i+1)
+    betta = (skalar_mono(r_next,r_next))/(skalar_rr);
+    add_vec_mult(r_next, p, p, 1, betta);
+
+    r = r_next;
+    matrix_vector_multiplication_mult_razr(x, tmp);//Ax
     count++;
   }
 
 
+  print_vector(x);
+  //вектор x - наш результат
+
 
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
-    delete[] *(preA + i);
-    delete[] *(res + i);
+    //delete[] *(preA + i);
+    //delete[] *(res + i);
   }
   delete[] tmp;
   delete[] r;
   delete[] p;
   delete[] b;
-  delete[] res;
-  delete[] preA;
+  //delete[] r_next;
+  //delete[] res;
+  //delete[] preA;
 }
