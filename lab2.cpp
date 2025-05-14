@@ -7,7 +7,7 @@
 #include <random>
 #include <fstream>
 
-#define demension 2
+#define demension 10000
 #define epsilon 0.0000001
 
 int intRand(const int & min, const int & max) {
@@ -578,7 +578,8 @@ double* add_vec_mult (double* v1, double* v2, double* res ,double k1 = 1.0, doub
 }
 
 double norma (double* vector) {
-  double tmp[omp_get_num_threads()];
+  double* tmp = new double[demension];
+  //double tmp[omp_get_num_threads()];
   for(int i = 0; i < omp_get_num_threads(); i++){
       tmp[i] = 0;
   }
@@ -591,6 +592,7 @@ double norma (double* vector) {
       sum += tmp[i];
   }
 
+  delete[] tmp;
   return sqrt(sum);
 }
 
@@ -714,10 +716,10 @@ std::cout << "=== starting method ===" << std::endl;
 
   //ДЛЯ ТЕСТА!!!!!
 
-  *(b) = 1;
-  *(b + 1) = 1;
-  //*(b + 2) = 8;
-
+  // *(b) = 6;
+  // *(b + 1) = 6;
+  // *(b + 2) = 8;
+  // *(b + 3) = 4;
 
   // auto start_bm = std::chrono::high_resolution_clock::now();
   // for (int i = 0; i < demension; i++){
@@ -729,7 +731,7 @@ std::cout << "=== starting method ===" << std::endl;
 
   
 //вектоор невязки r и вектор направления p
-
+  auto main_start = std::chrono::high_resolution_clock::now();
   //возьмем вектор (X_0)^T = (0 0 0 ... 0) => r = b - A*X_0 = b
   double* r = new double[demension];
   double* p = new double[demension];
@@ -745,6 +747,7 @@ std::cout << "=== starting method ===" << std::endl;
   }
 
   std::cout<<"pre-iteration finished"<<std::endl;
+  std::cout<<"starting main iterations"<<std::endl;
 
   int count = 0;
   double alpha;//alpha
@@ -768,11 +771,26 @@ std::cout << "=== starting method ===" << std::endl;
     matrix_vector_multiplication_mult_razr(x, tmp);//Ax
     count++;
   }
+      printf("\n");
 
 
   print_vector(x);
   //вектор x - наш результат
 
+  std::ofstream out;
+  out.open("result.txt");
+
+  for (int i = 0; i < demension; i++){
+    out << i << " " << x[i] << "\n";
+  }
+
+  out.close();
+
+  std::cout<<"results filled correctly in results.txt"<<std::endl;
+
+  auto main_stop = std::chrono::high_resolution_clock::now();
+  auto duration_main = std::chrono::duration_cast<std::chrono::seconds>(main_stop - main_start);
+  std::cout << "time duration for main algorythm (" << demension <<" equtions)"<< duration_main.count() << " sec" <<std::endl;
 
   #pragma omp parallel for
   for (int i = 0; i < demension; i++){
@@ -780,10 +798,11 @@ std::cout << "=== starting method ===" << std::endl;
     //delete[] *(res + i);
   }
   delete[] tmp;
+  delete[] x;
   delete[] r;
   delete[] p;
   delete[] b;
-  //delete[] r_next;
+  //delete[] r_next; - не надо удалять, так как это один и тот же указатель
   //delete[] res;
   //delete[] preA;
 }

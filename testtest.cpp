@@ -6,7 +6,7 @@
 #include <random>
 #include <chrono>
 
-#define demension 2000
+#define demension 10000
 std::string line;
 
 void print_matr(double** A) {
@@ -58,7 +58,9 @@ void make_rand_sym_positive_matr(double** result) {//более простая �
       for(int j = 0; j < demension; j++){
         sum = 0;
         for(int k = 0; k < demension; k++){
-          sum += A[i][k]*A[j][k]; //A*A^T
+          if(A[i][k] != 0 && A[j][k] != 0){
+            sum += A[i][k]*A[j][k]; //A*A^T
+          }
         }
         result[i][j] = sum;
       }
