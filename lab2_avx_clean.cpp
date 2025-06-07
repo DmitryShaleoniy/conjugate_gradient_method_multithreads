@@ -19,7 +19,7 @@ int num_block_col;
 #pragma GCC optimize("O3")
 #pragma GCC target("fma")
 
-#define demension 90432
+#define demension 90432//90432 5376
 #define block_size 64
 
 // void block_matrix_init(BlockMatrix* mat){
@@ -36,9 +36,10 @@ int num_block_col;
 struct BlockMatrix {
     double*** block_ptr;
     int blocksize;
-    int num_blocks;
+    long num_blocks;
     int num_rows_blocks;
     int num_cols_blocks;
+    int* block_index;
     inline int get_cur_block(int i_global, int j_global){
       int cur_num_block_row = (i_global/((int)block_size));
       int cur_num_block_col = (j_global/((int)block_size)); //номер блока найдем по формуле !!!!mat->num_rows_blocks * num_block_row + num_block_col!!!!
@@ -48,11 +49,13 @@ struct BlockMatrix {
 
 void block_matr_init_new(BlockMatrix* mat){
     mat->blocksize = block_size;
-    mat->num_blocks = (demension * demension)/(block_size*block_size);
     mat->num_cols_blocks = demension/block_size;
     mat->num_rows_blocks = demension/block_size;//этими числами будем определять сам блок
     //mat->block_ptr = new double**[mat->num_blocks];
-    mat->num_blocks = 7974976;
+    //mat->block_index = new int[mat->num_blocks];
+    //mat->num_blocks = 7974976;
+    //mat->num_blocks = (demension * demension)/(block_size*block_size);
+    mat->num_blocks = mat->num_cols_blocks*mat->num_rows_blocks;
     mat->block_ptr = new double**[mat->num_blocks];
 
     for (int i = 0; i < mat->num_blocks; i++){
@@ -60,7 +63,7 @@ void block_matr_init_new(BlockMatrix* mat){
     }
     std::ifstream in;
     in.close();
-    in.open("s3dkq4m2.mtx");
+    in.open("s3dkq4m2.mtx"); //s1rmt3m1.mtx s3dkq4m2.mtx
     if(!in){
       perror("Error opening file");
       exit(1);
@@ -169,8 +172,6 @@ void matrix_vector_block_mult(BlockMatrix* mat, double* vec, double* res){
   }
 }
 
-
-
 inline double _mm256_reduce_add_pd(__m256d v) {
     // Горизонтальное суммирование 4 double в AVX2
     __m256d temp = _mm256_hadd_pd(v, v);      // [v0+v1, v2+v3, v0+v1, v2+v3]
@@ -179,10 +180,9 @@ inline double _mm256_reduce_add_pd(__m256d v) {
     return _mm_cvtsd_f64(result);
 }
 
-#include <immintrin.h>
-
 void matrix_vector_block_mult_o(BlockMatrix* mat, double* vec, double* res) {
-    int num_threads = (demension > 11) ? 12 : demension;
+    //int num_threads = (demension > 11) ? 8 : demension;
+    int num_threads = 12;
     omp_set_num_threads(num_threads);
     
     // Инициализация результата нулями
@@ -529,7 +529,7 @@ int main() {
 //    если dim>10000 - другой критерий ((||Ax - b||)/||b|| < Epsilon)
   auto main_start = std::chrono::high_resolution_clock::now();
 
-  while((norma_avx(r)/norma_b >= 0.96)){ //здесь выполняется метод
+  while((norma_avx(r)/norma_b >= 0.975)){ //здесь выполняется метод //0.975 0.08
   //for (int i = 0; i < demension; i++){
     skalar_rr = skalar_avx(r,r);
     matrix_vector_block_mult_o(&mat, p, tmp);
